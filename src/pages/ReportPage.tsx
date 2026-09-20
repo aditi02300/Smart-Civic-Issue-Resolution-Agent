@@ -77,19 +77,29 @@ export default function ReportPage() {
         },
         body: JSON.stringify({
           complaint: form.complaint.trim(),
-          image: imageUrl ? 'provided' : undefined,
+          ...(imageUrl ? { image_url: imageUrl } : {}),
         }),
       });
 
       if (!response.ok) {
-        const errBody = await response.json().catch(() => ({}));
-        throw new Error(errBody.error || `Analysis failed (${response.status})`);
+        let errMessage = `Analysis failed (${response.status})`;
+        try {
+          const errBody = await response.json();
+          errMessage = errBody.error || errMessage;
+        } catch {
+          // Response wasn't JSON, use status-based message
+        }
+        throw new Error(errMessage);
       }
 
       const result = await response.json() as AnalysisResult;
+      if (!result.issue || !result.category || !result.department || !result.severity || !result.reason) {
+        throw new Error('AI returned an incomplete analysis. Please try again.');
+      }
       setAnalysis(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to analyze complaint.');
+      const msg = err instanceof Error ? err.message : 'Failed to analyze complaint. Please try again.';
+      setError(msg);
     } finally {
       setAnalyzing(false);
     }
