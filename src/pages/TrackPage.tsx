@@ -1,9 +1,31 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Search, Loader2, AlertTriangle, MapPin, Building, Tag, FileText, Calendar, Hash } from 'lucide-react';
+import { ArrowLeft, Search, Loader2, AlertTriangle, MapPin, Building, Tag, FileText, Calendar, Hash, Check } from 'lucide-react';
 import { navigate } from '@/lib/router';
 import { supabase } from '@/lib/supabase';
 import type { Complaint } from '@/lib/types';
 import { SEVERITY_COLORS, STATUS_COLORS } from '@/lib/types';
+
+type ComplaintStatus = 'Submitted' | 'Under Review' | 'In Progress' | 'Resolved' | 'Rejected';
+
+const STAGES: ComplaintStatus[] = ['Submitted', 'Under Review', 'In Progress', 'Resolved'];
+
+function getStageIndex(status: ComplaintStatus): number {
+  switch (status) {
+    case 'Submitted': return 0;
+    case 'Under Review': return 1;
+    case 'In Progress': return 2;
+    case 'Resolved': return 3;
+    case 'Rejected': return -1;
+    default: return 0;
+  }
+}
+
+function getStageClassName(stageIndex: number, currentIndex: number): string {
+  if (currentIndex < 0) return 'timeline-stage';
+  if (stageIndex < currentIndex) return 'timeline-stage completed';
+  if (stageIndex === currentIndex) return 'timeline-stage active';
+  return 'timeline-stage';
+}
 
 export default function TrackPage() {
   const [trackingId, setTrackingId] = useState('');
@@ -30,7 +52,7 @@ export default function TrackPage() {
 
       if (queryError) throw queryError;
       if (!data) {
-        setError('No complaint found with that tracking ID.');
+        setError('Complaint not found. Please check the tracking ID and try again.');
         return;
       }
       setComplaint(data as Complaint);
@@ -41,7 +63,6 @@ export default function TrackPage() {
     }
   };
 
-  // Auto-search if ID is in URL params
   useEffect(() => {
     const hash = window.location.hash;
     const queryString = hash.split('?')[1];
@@ -54,6 +75,8 @@ export default function TrackPage() {
       }
     }
   }, []);
+
+  const currentStageIndex = complaint ? getStageIndex(complaint.status as ComplaintStatus) : -1;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50/30">
@@ -106,24 +129,52 @@ export default function TrackPage() {
         {/* Result */}
         {complaint && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden animate-[fadeIn_0.4s_ease]">
-            {/* Status banner */}
+            {/* Status Timeline */}
             <div className="px-6 py-5 border-b border-slate-100">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-slate-400 font-medium uppercase tracking-wide">Status</span>
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-xs text-slate-400 font-medium uppercase tracking-wide">Status Timeline</span>
                 <span className="text-xs text-slate-400 font-mono">{complaint.tracking_id}</span>
               </div>
-              <div className="flex items-center gap-3">
-                <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold border ${STATUS_COLORS[complaint.status].bg} ${STATUS_COLORS[complaint.status].text} ${STATUS_COLORS[complaint.status].border}`}>
-                  <span className={`w-2 h-2 rounded-full ${STATUS_COLORS[complaint.status].dot}`} />
-                  {complaint.status}
-                </span>
-                {complaint.severity && (
-                  <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold border ${SEVERITY_COLORS[complaint.severity].bg} ${SEVERITY_COLORS[complaint.severity].text} ${SEVERITY_COLORS[complaint.severity].border}`}>
-                    <span className={`w-2 h-2 rounded-full ${SEVERITY_COLORS[complaint.severity].dot}`} />
-                    {complaint.severity} Priority
-                  </span>
-                )}
+              <div className="timeline">
+                <div className={`timeline-track stage-${currentStageIndex + 1}`}>
+                  <div className="timeline-line"></div>
+                  {STAGES.map((stage, i) => (
+                    <div key={stage} className={getStageClassName(i, currentStageIndex)}>
+                      <div className="timeline-dot">
+                        <Check className="w-4 h-4" />
+                      </div>
+                      <div className="timeline-label">{stage}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
+
+              {/* Current status badge */}
+              {complaint.status !== 'Rejected' && (
+                <div className="mt-4 flex items-center gap-3">
+                  <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold border ${STATUS_COLORS[complaint.status as keyof typeof STATUS_COLORS].bg} ${STATUS_COLORS[complaint.status as keyof typeof STATUS_COLORS].text} ${STATUS_COLORS[complaint.status as keyof typeof STATUS_COLORS].border}`}>
+                    <span className={`w-2 h-2 rounded-full ${STATUS_COLORS[complaint.status as keyof typeof STATUS_COLORS].dot}`} />
+                    {complaint.status}
+                  </span>
+                  {complaint.severity && (
+                    <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold border ${SEVERITY_COLORS[complaint.severity as keyof typeof SEVERITY_COLORS].bg} ${SEVERITY_COLORS[complaint.severity as keyof typeof SEVERITY_COLORS].text} ${SEVERITY_COLORS[complaint.severity as keyof typeof SEVERITY_COLORS].border}`}>
+                      <span className={`w-2 h-2 rounded-full ${SEVERITY_COLORS[complaint.severity as keyof typeof SEVERITY_COLORS].dot}`} />
+                      {complaint.severity} Priority
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Rejected status indicator */}
+              {complaint.status === 'Rejected' && (
+                <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 flex items-center gap-3">
+                  <AlertTriangle className="w-5 h-5" />
+                  <div>
+                    <p className="font-medium">Complaint Rejected</p>
+                    <p className="text-sm">This complaint has been reviewed and rejected.</p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Details */}
