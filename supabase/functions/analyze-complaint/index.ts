@@ -20,11 +20,15 @@ serve(async (req) => {
   }
 
   try {
-    const { complaint, image } = await req.json();
+    const body = await req.json();
+    const rawComplaint = body.complaint || body.description;
+    const complaint = typeof rawComplaint === 'string' ? rawComplaint.trim() : '';
+    const location = typeof body.location === 'string' ? body.location.trim() : '';
+    const image = body.image || body.image_url;
 
-    if (!complaint || typeof complaint !== 'string' || complaint.trim().length < 10) {
+    if (!complaint || complaint.length < 5) {
       return new Response(
-        JSON.stringify({ error: 'Complaint text is required and must be at least 10 characters.' }),
+        JSON.stringify({ error: 'Complaint or description is required (at least 5 characters).' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -46,7 +50,8 @@ You are an expert civic complaint classifier. Analyze the following complaint an
 - "severity": One of: "Low", "Medium", "High"
 - "reason": A brief explanation (1-2 sentences) of why this classification was chosen
 
-Complaint: "${complaint}"
+Complaint Description: "${complaint}"
+${location ? `Location: "${location}"` : ''}
 ${image ? `An image was also provided at: ${image}` : ''}
 
 Return ONLY valid JSON, no markdown, no extra text.

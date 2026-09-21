@@ -106,21 +106,36 @@ export default function ReportPage() {
   };
 
   const submitComplaint = async () => {
-    if (!analysis) return;
     setSubmitting(true);
     setError(null);
 
+    let aiCategory = "General";
+    let aiSeverity = "Medium";
+    let aiDepartment = "General";
+    let aiIssue = form.complaint.trim();
+    let aiReason = form.complaint.trim();
+
+    // 1. Use analysis values if available, otherwise use defaults
+    if (analysis) {
+      aiCategory = analysis.category || aiCategory;
+      aiSeverity = analysis.severity || aiSeverity;
+      aiDepartment = analysis.department || aiDepartment;
+      aiIssue = analysis.issue || aiIssue;
+      aiReason = analysis.reason || aiReason;
+    }
+
+    // 2. Save directly to Supabase
     try {
       const trackingId = generateTrackingId();
       const { error: insertError } = await supabase.from('complaints').insert({
         complaint_text: form.complaint.trim(),
         location: form.location.trim(),
-        image_url: form.imageUrl,
-        issue: analysis.issue,
-        category: analysis.category,
-        department: analysis.department,
-        severity: analysis.severity,
-        reason: analysis.reason,
+        image_url: form.imageUrl || null,
+        issue: aiIssue,
+        category: aiCategory,
+        department: aiDepartment,
+        severity: aiSeverity,
+        reason: aiReason,
         status: 'Submitted',
         tracking_id: trackingId,
       });
@@ -128,11 +143,13 @@ export default function ReportPage() {
       if (insertError) throw insertError;
       setSubmittedId(trackingId);
     } catch (err) {
+      console.error("Supabase insert error:", err);
       setError(err instanceof Error ? err.message : 'Failed to submit complaint.');
     } finally {
       setSubmitting(false);
     }
   };
+    
 
   const resetForm = () => {
     setForm({ complaint: '', location: '', image: null, imageUrl: null });
