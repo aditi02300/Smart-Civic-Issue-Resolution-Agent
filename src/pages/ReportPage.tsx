@@ -45,7 +45,6 @@ export default function ReportPage() {
       setError('Please enter a complaint of at least 10 characters.');
       return;
     }
-
     setAnalyzing(true);
     setError(null);
     setAnalysis(null);
@@ -67,33 +66,36 @@ export default function ReportPage() {
         setForm((f) => ({ ...f, imageUrl }));
       }
 
-      const { data, error: fnError } = await supabase.functions.invoke('analyze-complaint', {
-        body: {
-          description: form.complaint.trim(),
-          location: form.location.trim(),
-          ...(imageUrl ? { image_url: imageUrl } : {}),
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-complaint`;
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
         },
+        body: JSON.stringify({
+          complaint: form.complaint.trim(),
+          ...(imageUrl ? { image_url: imageUrl } : {}),
+        }),
       });
 
-      if (fnError) {
-        throw new Error(fnError.message || 'Failed to analyze complaint.');
+      if (!response.ok) {
+        let errMessage = `Analysis failed (${response.status})`;
+        try {
+          const errBody = await response.json();
+          errMessage = errBody.error || errMessage;
+        } catch {
+          // Response wasn't JSON, use status-based message
+        }
+        throw new Error(errMessage);
       }
 
-      if (!data || !data.issue || !data.category || !data.department || !data.severity || !data.reason) {
+      const result = await response.json() as AnalysisResult;
+      if (!result.issue || !result.category || !result.department || !result.severity || !result.reason) {
         throw new Error('AI returned an incomplete analysis. Please try again.');
       }
-
-      const validCategories: ComplaintCategory[] = ['Waste Management', 'Roads', 'Electrical', 'Water', 'Drainage', 'Other'];
-      const validSeverities: Severity[] = ['Low', 'Medium', 'High'];
-
-      const result: AnalysisResult = {
-        issue: data.issue,
-        category: validCategories.includes(data.category) ? data.category : 'Other',
-        department: data.department,
-        severity: validSeverities.includes(data.severity) ? data.severity : 'Low',
-        reason: data.reason,
-      };
-
       setAnalysis(result);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to analyze complaint. Please try again.';
@@ -107,12 +109,13 @@ export default function ReportPage() {
     setSubmitting(true);
     setError(null);
 
-    let aiCategory: ComplaintCategory = 'Other';
-    let aiSeverity: Severity = 'Medium';
-    let aiDepartment = 'General Municipal Services';
+    let aiCategory = "General";
+    let aiSeverity = "Medium";
+    let aiDepartment = "General";
     let aiIssue = form.complaint.trim();
     let aiReason = form.complaint.trim();
 
+    // 1. Use analysis values if available, otherwise use defaults
     if (analysis) {
       aiCategory = analysis.category || aiCategory;
       aiSeverity = analysis.severity || aiSeverity;
@@ -121,6 +124,7 @@ export default function ReportPage() {
       aiReason = analysis.reason || aiReason;
     }
 
+    // 2. Save directly to Supabase
     try {
       const trackingId = generateTrackingId();
       const { error: insertError } = await supabase.from('complaints').insert({
@@ -139,12 +143,13 @@ export default function ReportPage() {
       if (insertError) throw insertError;
       setSubmittedId(trackingId);
     } catch (err) {
-      console.error('Supabase insert error:', err);
+      console.error("Supabase insert error:", err);
       setError(err instanceof Error ? err.message : 'Failed to submit complaint.');
     } finally {
       setSubmitting(false);
     }
   };
+    
 
   const resetForm = () => {
     setForm({ complaint: '', location: '', image: null, imageUrl: null });
@@ -301,44 +306,8 @@ export default function ReportPage() {
           </div>
         </div>
 
-        {/* AI Analysis Card */}
-        {analyzing && (
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-6">
-            <div className="p-10 flex flex-col items-center justify-center text-center">
-              <Loader2 className="w-10 h-10 animate-spin text-blue-600 mb-3" />
-              <p className="font-semibold text-slate-900">Analyzing Complaint...</p>
-              <p className="text-xs text-slate-500 mt-1">Contacting AI edge service to classify issue, department, and severity</p>
-            </div>
-          </div>
-        )}
-
-        {error && !analyzing && (
-          <div className="bg-white rounded-2xl shadow-sm border border-red-200 overflow-hidden mb-6">
-            <div className="p-5 flex items-start gap-3">
-              <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <p className="font-semibold text-red-700 text-sm">Analysis Failed</p>
-                <p className="text-xs text-slate-600 mt-1">{error}</p>
-                <button
-                  onClick={submitComplaint}
-                  disabled={submitting}
-                  className="mt-3 px-3 py-1.5 text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {submitting ? (
-                    <>
-                      <Loader2 className="w-3 h-3 animate-spin inline mr-1" />
-                      Submitting...
-                    </>
-                  ) : (
-                    'Submit Anyway'
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {analysis && !analyzing && (
+        {/* AI Analysis card */}
+        {analysis && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-6 animate-[fadeIn_0.4s_ease]">
             <div className="flex items-center gap-3 px-6 py-4 bg-gradient-to-r from-slate-50 to-blue-50/50 border-b border-slate-100">
               <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center">
